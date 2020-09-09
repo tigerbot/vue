@@ -3,6 +3,7 @@ package vue
 import (
 	"fmt"
 	"reflect"
+	"strings"
 )
 
 // Context is received by functions to interact with the component.
@@ -22,30 +23,57 @@ func (vm *ViewModel) Data() interface{} {
 
 // Get returns the data field value.
 // Props and computed are included to get.
-// Computed may be calculated as needed.
 func (vm *ViewModel) Get(field string) interface{} {
-	if value, ok := vm.state[field]; ok {
-		return value
+	return vm.getValue(field).Interface()
+}
+func (vm *ViewModel) getValue(field string) reflect.Value {
+	if rv := vm.mapper.GetField(vm.data, field); rv.IsValid() {
+		return rv
 	}
 
-	function, ok := vm.comp.computed[field]
+	split := strings.SplitN(field, ".", 2)
+	value, ok := vm.props[split[0]]
 	if !ok {
-		must(fmt.Errorf("unknown data field: %s", field))
+		value, ok = vm.cache[split[0]]
 	}
-	value := vm.compute(function)
-	vm.mapField(field, value)
-	return value
+
+	if ok {
+		rv := reflect.ValueOf(value)
+		if len(split) == 2 {
+			rv = vm.mapper.GetField(rv, split[1])
+		}
+		if rv.IsValid() {
+			return rv
+		}
+	}
+
+	panic(fmt.Errorf("unknown data field: %s", field))
 }
 
 // Set assigns the data field to the given value.
 // Props and computed are excluded to set.
-func (vm *ViewModel) Set(field string, value interface{}) {
-	data := reflect.Indirect(vm.data)
-	oldVal := reflect.Indirect(data.FieldByName(field))
-	newVal := reflect.Indirect(reflect.ValueOf(value))
+func (vm *ViewModel) Set(field string, newVal interface{}) {
+	fieldVal := vm.mapper.GetField(vm.data, field)
+	if fieldVal.Kind() == reflect.Invalid {
+		panic(fmt.Errorf("unknown data field: %s", field))
+	}
 
-	oldVal.Set(newVal)
-	vm.mapField(field, value)
+	oldVal := fieldVal.Interface()
+	if reflect.DeepEqual(oldVal, newVal) {
+		return
+	}
+
+	fieldVal.Set(reflect.Indirect(reflect.ValueOf(newVal)))
+	if watcher, ok := vm.comp.watchers[field]; ok {
+		watcher.Call([]reflect.Value{
+			reflect.ValueOf(vm),
+			reflect.ValueOf(newVal),
+			reflect.ValueOf(oldVal),
+		})
+	}
+
+	vm.updateComputed()
+	vm.render()
 }
 
 // Go asynchronously calls the given method with optional arguments.
@@ -72,9 +100,27 @@ func (vm *ViewModel) call(method string, values []reflect.Value) {
 	}
 }
 
-// compute calls the given function and returns the first element.
-func (vm *ViewModel) compute(function reflect.Value) interface{} {
+// updateComputed evaluates every computed field for the component and stores the results in a
+// cache. If the resulting values differ from previous it will also trigger the relevant watchers.
+func (vm *ViewModel) updateComputed() {
+	oldCache := vm.cache
+	vm.cache = make(map[string]interface{}, len(vm.comp.computed))
+
 	values := []reflect.Value{reflect.ValueOf(vm)}
-	rets := function.Call(values)
-	return rets[0].Interface()
+	for computed, function := range vm.comp.computed {
+		vm.cache[computed] = function.Call(values)[0].Interface()
+	}
+
+	for field := range oldCache {
+		watcher, ok := vm.comp.watchers[field]
+		if !ok || reflect.DeepEqual(oldCache[field], vm.cache[field]) {
+			continue
+		}
+
+		watcher.Call([]reflect.Value{
+			reflect.ValueOf(vm),
+			reflect.ValueOf(vm.cache[field]),
+			reflect.ValueOf(oldCache[field]),
+		})
+	}
 }

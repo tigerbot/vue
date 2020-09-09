@@ -3,8 +3,12 @@ package mapper
 import (
 	"fmt"
 	"reflect"
+	"strconv"
+	"strings"
 	"sync"
 )
+
+const errMapPrefix = "cannot create map for"
 
 // fieldInfo holds metadata for a single struct field.
 type fieldInfo struct {
@@ -31,6 +35,8 @@ type Mapper struct {
 // the traversal down the struct to reach the field.
 func (m *Mapper) getMapping(t reflect.Type) *structMap {
 	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
 	mapping, ok := m.cache[t]
 	if !ok {
 		if m.cache == nil {
@@ -40,15 +46,37 @@ func (m *Mapper) getMapping(t reflect.Type) *structMap {
 		mapping = createMapping(t)
 		m.cache[t] = mapping
 	}
-	m.mutex.Unlock()
 	return mapping
 }
 
-func (m *Mapper) GetField(v reflect.Value, path string) reflect.Value {
-	v = reflect.Indirect(v)
-	tm := m.getMapping(v.Type())
+func (m *Mapper) GetField(v reflect.Value, path string) (res reflect.Value) {
+	// We want to catch all errors related to invalid paths, as the caller should be able
+	// to decide what to do if the path returns an invalid value.
+	defer func() {
+		if err, ok := recover().(error); ok && strings.HasPrefix(err.Error(), errMapPrefix) {
+			panic(err)
+		}
+	}()
 
-	if fi, ok := tm.Paths[path]; ok {
+	return m.getField(v, path)
+}
+func (m *Mapper) getField(v reflect.Value, path string) reflect.Value {
+	v = reflect.Indirect(v)
+	if path == "" {
+		return v
+	}
+
+	if ob, cb := strings.Index(path, "["), strings.Index(path, "]"); cb > ob {
+		ind, err := strconv.Atoi(path[ob+1 : cb])
+		if err != nil {
+			return reflect.Value{}
+		}
+		parent := m.getField(v, path[:ob]).Index(ind)
+		subPath := strings.TrimPrefix(path[cb+1:], ".")
+		return m.getField(parent, subPath)
+	}
+
+	if fi, ok := m.getMapping(v.Type()).Paths[path]; ok {
 		return v.FieldByIndex(fi.Index)
 	}
 	return reflect.Value{}
@@ -79,6 +107,12 @@ func appendCopy(is []int, i int) []int {
 // createMapping returns a mapping for the t type, using the tagName, mapFunc and
 // tagMapFunc to determine the canonical names of fields.
 func createMapping(t reflect.Type) *structMap {
+	defer func() {
+		if err := recover(); err != nil {
+			panic(fmt.Errorf("%s %s: %v", errMapPrefix, t, err))
+		}
+	}()
+
 	var allInfo []*fieldInfo
 	queue := []typeQueue{
 		{deref(t), &fieldInfo{}, ""},
@@ -89,7 +123,7 @@ func createMapping(t reflect.Type) *structMap {
 		tq := queue[0]
 		queue = queue[1:]
 
-		// ignore recursive field
+		// fail on recursive fields
 		for p := tq.fi.Parent; p != nil; p = p.Parent {
 			if tq.fi.Field.Type == p.Field.Type {
 				panic(fmt.Errorf("cannot handle circular type %s", p.Field.Type))

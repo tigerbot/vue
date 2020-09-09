@@ -27,8 +27,10 @@ func newSubs(comps map[string]*Comp) subs {
 
 // newSub creates a new subcomponent.
 func newSub(comp *Comp) *sub {
-	instances := make(map[int]*instance, 0)
-	return &sub{comp: comp, instances: instances}
+	return &sub{
+		comp:      comp,
+		instances: make(map[int]*instance, 0),
+	}
 }
 
 // putProp puts the props in the subcomponent.
@@ -63,25 +65,25 @@ func (sub *sub) putProp(field string, data interface{}) bool {
 
 // newInstance creates a new instance of the subcomponent with props.
 // // Returns false if the element is not a subcomponent.
-func (subs subs) newInstance(element string, bus *bus) bool {
+func (subs subs) newInstance(element string, parent *ViewModel) bool {
 	sub, ok := subs[element]
 	if !ok {
 		return false
 	}
-	return sub.newInstance(bus)
+	return sub.newInstance(parent)
 }
 
 // newInstance creates a new instance of the subcomponent with props.
-func (sub *sub) newInstance(bus *bus) bool {
+func (sub *sub) newInstance(parent *ViewModel) bool {
 	if inst, ok := sub.instances[sub.index]; ok {
 		if inst.vm == nil {
-			inst.vm = newViewModel(sub.comp, bus, inst.props)
+			inst.vm = newViewModel(sub.comp, parent.bus, inst.props, parent.mapper)
 		} else {
 			inst.vm.props = inst.props
 			inst.vm.render()
 		}
 	} else {
-		vm := newViewModel(sub.comp, bus, nil)
+		vm := newViewModel(sub.comp, parent.bus, nil, parent.mapper)
 		sub.instances[sub.index] = &instance{vm: vm}
 	}
 	sub.index++
