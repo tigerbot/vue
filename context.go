@@ -24,30 +24,39 @@ func (vm *ViewModel) Data() interface{} {
 // Get returns the data field value.
 // Props and computed are included to get.
 func (vm *ViewModel) Get(field string) interface{} {
-	return vm.getValue(field).Interface()
+	if rv := vm.getValue(field); rv.IsValid() {
+		return rv.Interface()
+	}
+	panic(fmt.Errorf("unknown data field: %s", field))
 }
 func (vm *ViewModel) getValue(field string) reflect.Value {
 	if rv := vm.mapper.GetField(vm.data, field); rv.IsValid() {
 		return rv
 	}
 
-	split := strings.SplitN(field, ".", 2)
-	value, ok := vm.props[split[0]]
+	var topLevel, subPath string
+	if ind := strings.IndexAny(field, ".["); ind < 0 {
+		topLevel = field
+	} else if field[ind] == '[' {
+		topLevel, subPath = field[:ind], field[ind:]
+	} else {
+		topLevel, subPath = field[:ind], field[ind+1:]
+	}
+
+	value, ok := vm.props[topLevel]
 	if !ok {
-		value, ok = vm.cache[split[0]]
+		value, ok = vm.cache[topLevel]
 	}
 
+	var rv reflect.Value
 	if ok {
-		rv := reflect.ValueOf(value)
-		if len(split) == 2 {
-			rv = vm.mapper.GetField(rv, split[1])
-		}
-		if rv.IsValid() {
-			return rv
+		rv = reflect.ValueOf(value)
+		if subPath != "" {
+			rv = vm.mapper.GetField(rv, subPath)
 		}
 	}
 
-	panic(fmt.Errorf("unknown data field: %s", field))
+	return rv
 }
 
 // Set assigns the data field to the given value.
