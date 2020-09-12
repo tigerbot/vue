@@ -26,6 +26,7 @@ var attrOrder = []string{vFor, vIf, vModel, vOn, vBind, vHtml}
 
 // render executes and renders the prepared state.
 func (vm *ViewModel) render() {
+	vm.updateComputed()
 	node := vm.execute()
 
 	vm.subs.reset()

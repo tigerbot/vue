@@ -72,7 +72,7 @@ func (vm *ViewModel) Set(field string, newVal interface{}) {
 		return
 	}
 
-	fieldVal.Set(reflect.Indirect(reflect.ValueOf(newVal)))
+	fieldVal.Set(reflect.ValueOf(newVal))
 	if watcher, ok := vm.comp.watchers[field]; ok {
 		watcher.Call([]reflect.Value{
 			reflect.ValueOf(vm),
@@ -81,7 +81,6 @@ func (vm *ViewModel) Set(field string, newVal interface{}) {
 		})
 	}
 
-	vm.updateComputed()
 	vm.render()
 }
 

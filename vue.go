@@ -46,7 +46,6 @@ func newViewModel(comp *Comp, bus *bus, props map[string]interface{}, m *mapper.
 		funcs:  make(map[string]js.Func, 0),
 	}
 	vm.bus = newBus(bus, vm)
-	vm.updateComputed()
 	vm.render()
 	return vm
 }
