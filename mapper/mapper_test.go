@@ -127,10 +127,9 @@ func TestMapper(t *testing.T) {
 		"BadValue": {},
 	}
 
-	var m Mapper
 	root := reflect.ValueOf(data)
 	for path, want := range cases {
-		got := m.GetField(root, path)
+		got := GetField(root, path)
 		if gk, wk := got.Kind(), want.Kind(); gk != wk {
 			t.Errorf("getting %s returned kind %s, expected %s", path, gk, wk)
 		} else if gk != reflect.Invalid {

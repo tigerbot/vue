@@ -4,31 +4,28 @@ package vue
 import (
 	"reflect"
 	"syscall/js"
-
-	"github.com/norunners/vue/mapper"
 )
 
 // ViewModel is a vue view model, e.g. VM.
 type ViewModel struct {
-	comp   *Comp
-	vnode  *vnode
-	data   reflect.Value
-	funcs  map[string]js.Func
-	props  map[string]interface{}
-	cache  map[string]interface{}
-	subs   subs
-	bus    *bus
-	mapper *mapper.Mapper
+	comp  *Comp
+	vnode *vnode
+	data  reflect.Value
+	funcs map[string]js.Func
+	props map[string]interface{}
+	cache map[string]interface{}
+	subs  subs
+	bus   *bus
 }
 
 // New creates a new view model from the given options.
 func New(options ...Option) *ViewModel {
 	comp := Component(options...)
-	return newViewModel(comp, nil, nil, new(mapper.Mapper))
+	return newViewModel(comp, nil, nil)
 }
 
 // newViewModel creates a new view model from the given component with props.
-func newViewModel(comp *Comp, bus *bus, props map[string]interface{}, m *mapper.Mapper) *ViewModel {
+func newViewModel(comp *Comp, bus *bus, props map[string]interface{}) *ViewModel {
 	var vnode *vnode
 	if comp.isSub {
 		vnode = newSubNode(comp.tmpl)
@@ -37,13 +34,12 @@ func newViewModel(comp *Comp, bus *bus, props map[string]interface{}, m *mapper.
 	}
 
 	vm := &ViewModel{
-		comp:   comp,
-		props:  props,
-		vnode:  vnode,
-		mapper: m,
-		data:   comp.newData(),
-		subs:   newSubs(comp.subs),
-		funcs:  make(map[string]js.Func, 0),
+		comp:  comp,
+		props: props,
+		vnode: vnode,
+		data:  comp.newData(),
+		subs:  newSubs(comp.subs),
+		funcs: make(map[string]js.Func, 0),
 	}
 	vm.bus = newBus(bus, vm)
 	vm.render()

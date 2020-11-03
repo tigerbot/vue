@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+
+	"github.com/norunners/vue/mapper"
 )
 
 // Context is received by functions to interact with the component.
@@ -30,7 +32,7 @@ func (vm *ViewModel) Get(field string) interface{} {
 	panic(fmt.Errorf("unknown data field: %s", field))
 }
 func (vm *ViewModel) getValue(field string) reflect.Value {
-	if rv := vm.mapper.GetField(vm.data, field); rv.IsValid() {
+	if rv := mapper.GetField(vm.data, field); rv.IsValid() {
 		return rv
 	}
 
@@ -52,7 +54,7 @@ func (vm *ViewModel) getValue(field string) reflect.Value {
 	if ok {
 		rv = reflect.ValueOf(value)
 		if subPath != "" {
-			rv = vm.mapper.GetField(rv, subPath)
+			rv = mapper.GetField(rv, subPath)
 		}
 	}
 
@@ -62,7 +64,7 @@ func (vm *ViewModel) getValue(field string) reflect.Value {
 // Set assigns the data field to the given value.
 // Props and computed are excluded to set.
 func (vm *ViewModel) Set(field string, newVal interface{}) {
-	fieldVal := vm.mapper.GetField(vm.data, field)
+	fieldVal := mapper.GetField(vm.data, field)
 	if fieldVal.Kind() == reflect.Invalid {
 		panic(fmt.Errorf("unknown data field: %s", field))
 	}

@@ -10,6 +10,11 @@ import (
 
 const errMapPrefix = "cannot create map for"
 
+var (
+	mutex sync.Mutex
+	cache = make(map[reflect.Type]*structMap)
+)
+
 // fieldInfo holds metadata for a single struct field.
 type fieldInfo struct {
 	Index    []int
@@ -24,32 +29,21 @@ type structMap struct {
 	Paths map[string]*fieldInfo
 }
 
-// Mapper is a general purpose Mapper of names to struct fields. A Mapper
-// behaves like most marshallers in the standard library, but without tag support.
-type Mapper struct {
-	mutex sync.Mutex
-	cache map[reflect.Type]*structMap
-}
-
 // getMapping returns a mapping of field strings to int slices representing
 // the traversal down the struct to reach the field.
-func (m *Mapper) getMapping(t reflect.Type) *structMap {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
+func getMapping(t reflect.Type) *structMap {
+	mutex.Lock()
+	defer mutex.Unlock()
 
-	mapping, ok := m.cache[t]
+	mapping, ok := cache[t]
 	if !ok {
-		if m.cache == nil {
-			m.cache = make(map[reflect.Type]*structMap)
-		}
-
 		mapping = createMapping(t)
-		m.cache[t] = mapping
+		cache[t] = mapping
 	}
 	return mapping
 }
 
-func (m *Mapper) GetField(v reflect.Value, path string) (res reflect.Value) {
+func GetField(v reflect.Value, path string) reflect.Value {
 	// We want to catch all errors related to invalid paths, as the caller should be able
 	// to decide what to do if the path returns an invalid value.
 	defer func() {
@@ -58,9 +52,9 @@ func (m *Mapper) GetField(v reflect.Value, path string) (res reflect.Value) {
 		}
 	}()
 
-	return m.getField(v, path)
+	return getField(v, path)
 }
-func (m *Mapper) getField(v reflect.Value, path string) reflect.Value {
+func getField(v reflect.Value, path string) reflect.Value {
 	v = reflect.Indirect(v)
 	if path == "" {
 		return v
@@ -71,12 +65,12 @@ func (m *Mapper) getField(v reflect.Value, path string) reflect.Value {
 		if err != nil {
 			return reflect.Value{}
 		}
-		parent := m.getField(v, path[:ob]).Index(ind)
+		parent := getField(v, path[:ob]).Index(ind)
 		subPath := strings.TrimPrefix(path[cb+1:], ".")
-		return m.getField(parent, subPath)
+		return getField(parent, subPath)
 	}
 
-	if fi, ok := m.getMapping(v.Type()).Paths[path]; ok {
+	if fi, ok := getMapping(v.Type()).Paths[path]; ok {
 		return v.FieldByIndex(fi.Index)
 	}
 	return reflect.Value{}

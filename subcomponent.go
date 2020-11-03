@@ -77,13 +77,13 @@ func (subs subs) newInstance(element string, parent *ViewModel) bool {
 func (sub *sub) newInstance(parent *ViewModel) bool {
 	if inst, ok := sub.instances[sub.index]; ok {
 		if inst.vm == nil {
-			inst.vm = newViewModel(sub.comp, parent.bus, inst.props, parent.mapper)
+			inst.vm = newViewModel(sub.comp, parent.bus, inst.props)
 		} else {
 			inst.vm.props = inst.props
 			inst.vm.render()
 		}
 	} else {
-		vm := newViewModel(sub.comp, parent.bus, nil, parent.mapper)
+		vm := newViewModel(sub.comp, parent.bus, nil)
 		sub.instances[sub.index] = &instance{vm: vm}
 	}
 	sub.index++
