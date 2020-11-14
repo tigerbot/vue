@@ -15,18 +15,9 @@ var (
 	cache = make(map[reflect.Type]*structMap)
 )
 
-// fieldInfo holds metadata for a single struct field.
-type fieldInfo struct {
-	Index    []int
-	Path     string
-	Field    reflect.StructField
-	Parent   *fieldInfo
-	Children []*fieldInfo
-}
-
 // A structMap maps a string path to all of a structs children and grandchildren.
 type structMap struct {
-	Paths map[string]*fieldInfo
+	Paths map[string][]int
 }
 
 // getMapping returns a mapping of field strings to int slices representing
@@ -61,22 +52,31 @@ func getField(v reflect.Value, path string) reflect.Value {
 	}
 
 	if ob, cb := strings.Index(path, "["), strings.Index(path, "]"); cb > ob {
-		ind, err := strconv.Atoi(path[ob+1 : cb])
-		if err != nil {
-			return reflect.Value{}
-		}
-		parent := getField(v, path[:ob]).Index(ind)
+		parent := getField(v, path[:ob])
 		subPath := strings.TrimPrefix(path[cb+1:], ".")
-		return getField(parent, subPath)
+		if key := path[ob+1 : cb]; key[0] == '"' {
+			if keyVal, err := strconv.Unquote(key); err == nil {
+				return getField(parent.MapIndex(reflect.ValueOf(keyVal)), subPath)
+			}
+		} else if ind, err := strconv.Atoi(key); err == nil {
+			return getField(parent.Index(ind), subPath)
+		}
+		return reflect.Value{}
 	}
 
-	if fi, ok := getMapping(v.Type()).Paths[path]; ok {
-		return v.FieldByIndex(fi.Index)
+	if index, ok := getMapping(v.Type()).Paths[path]; ok {
+		return v.FieldByIndex(index)
 	}
 	return reflect.Value{}
 }
 
 // -- helpers & utilities --
+type fieldInfo struct {
+	Index  []int
+	Path   string
+	Field  reflect.StructField
+	Parent *fieldInfo
+}
 type typeQueue struct {
 	t  reflect.Type
 	fi *fieldInfo
@@ -98,8 +98,6 @@ func appendCopy(is []int, i int) []int {
 	return append(x, i)
 }
 
-// createMapping returns a mapping for the t type, using the tagName, mapFunc and
-// tagMapFunc to determine the canonical names of fields.
 func createMapping(t reflect.Type) *structMap {
 	defer func() {
 		if err := recover(); err != nil {
@@ -125,7 +123,6 @@ func createMapping(t reflect.Type) *structMap {
 		}
 
 		nChildren := tq.t.NumField()
-		tq.fi.Children = make([]*fieldInfo, nChildren)
 
 		// iterate through all of its fields
 		for fieldPos := 0; fieldPos < nChildren; fieldPos++ {
@@ -142,7 +139,6 @@ func createMapping(t reflect.Type) *structMap {
 				Parent: tq.fi,
 			}
 
-			tq.fi.Children[fieldPos] = fi
 			allInfo = append(allInfo, fi)
 
 			if childType := deref(f.Type); childType.Kind() == reflect.Struct {
@@ -156,13 +152,13 @@ func createMapping(t reflect.Type) *structMap {
 	}
 
 	result := &structMap{
-		Paths: make(map[string]*fieldInfo, len(allInfo)),
+		Paths: make(map[string][]int, len(allInfo)),
 	}
 	// Add the paths in reverse so that if a field name conflicts with a child of an embedded
 	// sibling it will take precedence (all sibling should be added to the queue before any
 	// of them can add their own children).
 	for i := len(allInfo) - 1; i >= 0; i-- {
-		result.Paths[allInfo[i].Path] = allInfo[i]
+		result.Paths[allInfo[i].Path] = allInfo[i].Index
 	}
 
 	return result
