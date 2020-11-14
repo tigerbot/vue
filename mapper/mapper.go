@@ -18,6 +18,7 @@ var (
 // A structMap maps a string path to all of a structs children and grandchildren.
 type structMap struct {
 	Paths map[string][]int
+	Loops []string
 }
 
 // getMapping returns a mapping of field strings to int slices representing
@@ -64,21 +65,30 @@ func getField(v reflect.Value, path string) reflect.Value {
 		return reflect.Value{}
 	}
 
-	if index, ok := getMapping(v.Type()).Paths[path]; ok {
+	m := getMapping(v.Type())
+	if index, ok := m.Paths[path]; ok {
 		return v.FieldByIndex(index)
+	}
+	for _, prefix := range m.Loops {
+		if !strings.HasPrefix(path, prefix) {
+			continue
+		}
+		path = strings.TrimPrefix(path, prefix)
+		path = strings.TrimPrefix(path, ".")
+		return getField(v.FieldByIndex(m.Paths[prefix]), path)
 	}
 	return reflect.Value{}
 }
 
 // -- helpers & utilities --
 type fieldInfo struct {
+	Type   reflect.Type
 	Index  []int
 	Path   string
 	Field  reflect.StructField
 	Parent *fieldInfo
 }
 type typeQueue struct {
-	t  reflect.Type
 	fi *fieldInfo
 	pp string // path prefix
 }
@@ -105,11 +115,12 @@ func createMapping(t reflect.Type) *structMap {
 		}
 	}()
 
-	var allInfo []*fieldInfo
+	result := &structMap{Paths: make(map[string][]int)}
 	queue := []typeQueue{
-		{deref(t), &fieldInfo{}, ""},
+		{&fieldInfo{Type: deref(t)}, ""},
 	}
 
+main:
 	for len(queue) != 0 {
 		// pop the first item off of the queue
 		tq := queue[0]
@@ -117,48 +128,45 @@ func createMapping(t reflect.Type) *structMap {
 
 		// fail on recursive fields
 		for p := tq.fi.Parent; p != nil; p = p.Parent {
-			if tq.fi.Field.Type == p.Field.Type {
-				panic(fmt.Errorf("cannot handle circular type %s", p.Field.Type))
+			if tq.fi.Type == p.Type {
+				result.Loops = append(result.Loops, tq.fi.Path)
+				continue main
 			}
 		}
 
-		nChildren := tq.t.NumField()
-
 		// iterate through all of its fields
+		nChildren := tq.fi.Type.NumField()
 		for fieldPos := 0; fieldPos < nChildren; fieldPos++ {
-			f := tq.t.Field(fieldPos)
+			f := tq.fi.Type.Field(fieldPos)
 			// skip unexported fields
 			if f.PkgPath != "" && !f.Anonymous {
 				continue
 			}
 
 			fi := &fieldInfo{
+				Type:   deref(f.Type),
 				Index:  appendCopy(tq.fi.Index, fieldPos),
 				Path:   tq.pp + f.Name,
 				Field:  f,
 				Parent: tq.fi,
 			}
 
-			allInfo = append(allInfo, fi)
+			// Check if we've already added a field with the same name so that if a child of an
+			// embedded field conflicts with the name of another field we follow the same rules
+			// that go does (all sibling should be added to the queue before any of them can add
+			// their own children).
+			if _, prev := result.Paths[fi.Path]; !prev {
+				result.Paths[fi.Path] = fi.Index
+			}
 
-			if childType := deref(f.Type); childType.Kind() == reflect.Struct {
+			if fi.Type.Kind() == reflect.Struct {
 				// For anonymous structs allow access using full path just like normal go
-				queue = append(queue, typeQueue{childType, fi, fi.Path + "."})
+				queue = append(queue, typeQueue{fi, fi.Path + "."})
 				if f.Anonymous {
-					queue = append(queue, typeQueue{childType, fi, tq.pp})
+					queue = append(queue, typeQueue{fi, tq.pp})
 				}
 			}
 		}
-	}
-
-	result := &structMap{
-		Paths: make(map[string][]int, len(allInfo)),
-	}
-	// Add the paths in reverse so that if a field name conflicts with a child of an embedded
-	// sibling it will take precedence (all sibling should be added to the queue before any
-	// of them can add their own children).
-	for i := len(allInfo) - 1; i >= 0; i-- {
-		result.Paths[allInfo[i].Path] = allInfo[i].Index
 	}
 
 	return result

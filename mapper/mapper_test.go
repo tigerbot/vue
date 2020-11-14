@@ -199,3 +199,46 @@ func TestMaps(t *testing.T) {
 		t.Run(c.path, c.Run)
 	}
 }
+
+func TestRecursive(t *testing.T) {
+	type Rescursive struct {
+		Label string
+		Left  *Rescursive
+		Right *Rescursive
+	}
+
+	data := Rescursive{
+		Label: "top",
+		Left: &Rescursive{
+			Label: "left",
+			Left:  &Rescursive{Label: "left-left"},
+			Right: &Rescursive{Label: "left-right"},
+		},
+		Right: &Rescursive{
+			Label: "right",
+			Left:  &Rescursive{Label: "right-left"},
+			Right: &Rescursive{Label: "right-right"},
+		},
+	}
+
+	root := reflect.ValueOf(data)
+	cases := []testCase{
+		{root: root, path: `Label`, want: reflect.ValueOf(data.Label)},
+		{root: root, path: `Left`, want: reflect.ValueOf(data.Left)},
+		{root: root, path: `Left.Label`, want: reflect.ValueOf(data.Left.Label)},
+		{root: root, path: `Left.Left`, want: reflect.ValueOf(data.Left.Left)},
+		{root: root, path: `Left.Left.Label`, want: reflect.ValueOf(data.Left.Left.Label)},
+		{root: root, path: `Left.Right`, want: reflect.ValueOf(data.Left.Right)},
+		{root: root, path: `Left.Right.Label`, want: reflect.ValueOf(data.Left.Right.Label)},
+		{root: root, path: `Right`, want: reflect.ValueOf(data.Right)},
+		{root: root, path: `Right.Label`, want: reflect.ValueOf(data.Right.Label)},
+		{root: root, path: `Right.Left`, want: reflect.ValueOf(data.Right.Left)},
+		{root: root, path: `Right.Left.Label`, want: reflect.ValueOf(data.Right.Left.Label)},
+		{root: root, path: `Right.Right`, want: reflect.ValueOf(data.Right.Right)},
+		{root: root, path: `Right.Right.Label`, want: reflect.ValueOf(data.Right.Right.Label)},
+	}
+
+	for _, c := range cases {
+		t.Run(c.path, c.Run)
+	}
+}
