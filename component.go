@@ -21,20 +21,15 @@ type Comp struct {
 
 // Component creates a new component from the given options.
 func Component(options ...Option) *Comp {
-	methods := make(map[string]reflect.Value, 0)
-	computed := make(map[string]reflect.Value, 0)
-	watches := make(map[string]reflect.Value, 0)
-	props := make(map[string]struct{}, 0)
-	subs := make(map[string]*Comp, 0)
-
 	comp := &Comp{
 		data:     struct{}{},
-		methods:  methods,
-		computed: computed,
-		watchers: watches,
-		props:    props,
-		subs:     subs,
+		methods:  make(map[string]reflect.Value, 0),
+		computed: make(map[string]reflect.Value, 0),
+		watchers: make(map[string]reflect.Value, 0),
+		props:    make(map[string]struct{}, 0),
+		subs:     make(map[string]*Comp, 0),
 	}
+
 	for _, option := range options {
 		option(comp)
 	}

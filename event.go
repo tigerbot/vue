@@ -27,7 +27,6 @@ func (vm *ViewModel) vModel(event dom.Event) {
 
 	value := target.Underlying().Get("value").String()
 	vm.Set(field, value)
-	vm.render()
 }
 
 // vOn is the vue on event callback.

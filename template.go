@@ -24,19 +24,35 @@ const (
 
 var attrOrder = []string{vFor, vIf, vModel, vOn, vBind, vHtml}
 
+// render executes and renders the prepared state.
+func (vm *ViewModel) render() {
+	vm.updateComputed()
+	node := vm.execute()
+
+	vm.subs.reset()
+	if vm.comp.isSub {
+		var ok bool
+		if node, ok = firstElement(node); !ok {
+			must(fmt.Errorf("failed to find first element from node: %s", node.Data))
+		}
+	}
+	vm.vnode.render(node, vm.subs)
+	vm.subs.reset()
+}
+
 // execute executes the template with the given data to be rendered.
-func (vm *ViewModel) execute(data map[string]interface{}) *html.Node {
+func (vm *ViewModel) execute() *html.Node {
 	node := parseNode(vm.comp.tmpl)
 
-	vm.executeElement(node, data)
-	executeText(node, data)
+	vm.executeElement(node)
+	vm.executeText(node)
 
 	return node
 }
 
 // executeElement recursively traverses the html node and templates the elements.
 // The next node is always returned which allows execution to jump around as needed.
-func (vm *ViewModel) executeElement(node *html.Node, data map[string]interface{}) *html.Node {
+func (vm *ViewModel) executeElement(node *html.Node) *html.Node {
 	// Leave the text nodes to be executed.
 	if node.Type != html.ElementNode {
 		return node.NextSibling
@@ -49,31 +65,31 @@ func (vm *ViewModel) executeElement(node *html.Node, data map[string]interface{}
 	for i := 0; i < len(node.Attr); i++ {
 		attr := node.Attr[i]
 		if strings.HasPrefix(attr.Key, v) {
-			deleteAttr(node, i)
+			node.Attr = append(node.Attr[:i], node.Attr[i+1:]...)
 			i--
-			next, modified := vm.executeAttr(node, attr, data)
+
 			// The current node is not longer valid in favor of the next node.
-			if modified {
+			if next, modified := vm.executeAttr(node, attr); modified {
 				return next
 			}
 		}
 	}
 
 	// Execute subcomponent.
-	if vm.subs.newInstance(node.Data, vm.bus) {
+	if vm.subs.newInstance(node.Data, vm) {
 		return node.NextSibling
 	}
 
 	// Execute children.
 	for child := node.FirstChild; child != nil; {
-		child = vm.executeElement(child, data)
+		child = vm.executeElement(child)
 	}
 
 	return node.NextSibling
 }
 
 // executeText recursively executes the text node.
-func executeText(node *html.Node, data map[string]interface{}) {
+func (vm *ViewModel) executeText(node *html.Node) {
 	switch node.Type {
 	case html.TextNode:
 		if strings.TrimSpace(node.Data) == "" {
@@ -81,36 +97,37 @@ func executeText(node *html.Node, data map[string]interface{}) {
 		}
 
 		var err error
-		node.Data, err = mustache.Render(node.Data, data)
+		node.Data, err = mustache.Render(node.Data, vm.data, vm.props, vm.cache)
 		must(err)
 	case html.ElementNode:
 		for child := node.FirstChild; child != nil; child = child.NextSibling {
-			executeText(child, data)
+			vm.executeText(child)
 		}
 	}
 }
 
 // executeAttr executes the given vue attribute.
 // The next node will be executed next if the html was modified unless it is nil.
-func (vm *ViewModel) executeAttr(node *html.Node, attr html.Attribute, data map[string]interface{}) (*html.Node, bool) {
+func (vm *ViewModel) executeAttr(node *html.Node, attr html.Attribute) (*html.Node, bool) {
 	vals := strings.Split(attr.Key, ":")
 	typ, part := vals[0], ""
 	if len(vals) > 1 {
 		part = vals[1]
 	}
+
 	var next *html.Node
 	var modified bool
 	switch typ {
 	case vBind:
-		vm.executeAttrBind(node, part, attr.Val, data)
+		vm.executeAttrBind(node, part, attr.Val)
 	case vFor:
-		next, modified = vm.executeAttrFor(node, attr.Val, data)
+		next, modified = vm.executeAttrFor(node, attr.Val)
 	case vHtml:
-		executeAttrHtml(node, attr.Val, data)
+		vm.executeAttrHtml(node, attr.Val)
 	case vIf:
-		next, modified = vm.executeAttrIf(node, attr.Val, data)
+		next, modified = vm.executeAttrIf(node, attr.Val)
 	case vModel:
-		vm.executeAttrModel(node, attr.Val, data)
+		vm.executeAttrModel(node, attr.Val)
 	case vOn:
 		vm.executeAttrOn(node, part, attr.Val)
 	default:
@@ -120,9 +137,9 @@ func (vm *ViewModel) executeAttr(node *html.Node, attr html.Attribute, data map[
 }
 
 // executeAttrBind executes the vue bind attribute.
-func (vm *ViewModel) executeAttrBind(node *html.Node, key, field string, data map[string]interface{}) {
-	value, ok := data[field]
-	if !ok {
+func (vm *ViewModel) executeAttrBind(node *html.Node, key, field string) {
+	value := vm.Get(field)
+	if value == nil {
 		must(fmt.Errorf("unknown data field: %s", field))
 	}
 
@@ -153,12 +170,12 @@ func (vm *ViewModel) executeAttrBind(node *html.Node, key, field string, data ma
 }
 
 // executeAttrFor executes the vue for attribute.
-func (vm *ViewModel) executeAttrFor(node *html.Node, value string, data map[string]interface{}) (*html.Node, bool) {
+func (vm *ViewModel) executeAttrFor(node *html.Node, value string) (*html.Node, bool) {
 	vals := strings.Split(value, "in")
 	name := bytes.TrimSpace([]byte(vals[0]))
 	field := strings.TrimSpace(vals[1])
 
-	slice := reflect.ValueOf(data[field])
+	slice := vm.getValue(field)
 	if k := slice.Kind(); k != reflect.Slice && k != reflect.Array {
 		must(fmt.Errorf("slice not found for field: %s", field))
 	}
@@ -171,19 +188,15 @@ func (vm *ViewModel) executeAttrFor(node *html.Node, value string, data map[stri
 	}
 
 	elem := bytes.NewBuffer(nil)
-	err := html.Render(elem, node)
-	must(err)
+	must(html.Render(elem, node))
 
 	buf := bytes.NewBuffer(nil)
 	for i := 0; i < n; i++ {
-		key := fmt.Sprintf("%s%d", name, vm.index)
-		vm.index++
+		key := fmt.Sprintf("%s[%d]", field, i)
 
 		b := bytes.Replace(elem.Bytes(), name, []byte(key), -1)
 		_, err := buf.Write(b)
 		must(err)
-
-		data[key] = slice.Index(i).Interface()
 	}
 
 	nodes := parseNodes(buf)
@@ -196,12 +209,8 @@ func (vm *ViewModel) executeAttrFor(node *html.Node, value string, data map[stri
 }
 
 // executeAttrHtml executes the vue html attribute.
-func executeAttrHtml(node *html.Node, field string, data map[string]interface{}) {
-	value, ok := data[field]
-	if !ok {
-		must(fmt.Errorf("unknown data field: %s", field))
-	}
-	html, ok := value.(string)
+func (vm *ViewModel) executeAttrHtml(node *html.Node, field string) {
+	html, ok := vm.Get(field).(string)
 	if !ok {
 		must(fmt.Errorf("data field is not of type string: %T", field))
 	}
@@ -213,13 +222,13 @@ func executeAttrHtml(node *html.Node, field string, data map[string]interface{})
 }
 
 // executeAttrIf executes the vue if attribute.
-func (vm *ViewModel) executeAttrIf(node *html.Node, field string, data map[string]interface{}) (*html.Node, bool) {
+func (vm *ViewModel) executeAttrIf(node *html.Node, field string) (*html.Node, bool) {
 	negate := strings.HasPrefix(field, "!")
 	if negate {
 		field = field[1:]
 	}
 
-	if val, ok := data[field].(bool); ok && val != negate {
+	if val, ok := vm.Get(field).(bool); ok && val != negate {
 		return nil, false
 	}
 
@@ -229,15 +238,11 @@ func (vm *ViewModel) executeAttrIf(node *html.Node, field string, data map[strin
 }
 
 // executeAttrModel executes the vue model attribute.
-func (vm *ViewModel) executeAttrModel(node *html.Node, field string, data map[string]interface{}) {
+func (vm *ViewModel) executeAttrModel(node *html.Node, field string) {
 	typ := "input"
 	node.Attr = append(node.Attr, html.Attribute{Key: typ, Val: field})
 
-	value, ok := data[field]
-	if !ok {
-		must(fmt.Errorf("unknown data field: %s", field))
-	}
-	val, ok := value.(string)
+	val, ok := vm.Get(field).(string)
 	if !ok {
 		must(fmt.Errorf("data field is not of type string: %T", field))
 	}
@@ -309,12 +314,6 @@ func orderAttrs(node *html.Node) {
 		}
 	}
 	node.Attr = attrs
-}
-
-// deleteAttr deletes the attribute of the node at the index.
-// Attribute order is preserved.
-func deleteAttr(node *html.Node, i int) {
-	node.Attr = append(node.Attr[:i], node.Attr[i+1:]...)
 }
 
 // formatAttrClass formats the value into a class attribute.

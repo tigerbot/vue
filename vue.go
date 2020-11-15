@@ -11,13 +11,11 @@ type ViewModel struct {
 	comp  *Comp
 	vnode *vnode
 	data  reflect.Value
-	state map[string]interface{}
 	funcs map[string]js.Func
 	props map[string]interface{}
+	cache map[string]interface{}
 	subs  subs
 	bus   *bus
-
-	index int
 }
 
 // New creates a new view model from the given options.
@@ -34,17 +32,14 @@ func newViewModel(comp *Comp, bus *bus, props map[string]interface{}) *ViewModel
 	} else {
 		vnode = newNode(comp.el)
 	}
-	data := comp.newData()
-	funcs := make(map[string]js.Func, 0)
-	subs := newSubs(comp.subs)
 
 	vm := &ViewModel{
 		comp:  comp,
-		vnode: vnode,
-		data:  data,
-		funcs: funcs,
 		props: props,
-		subs:  subs,
+		vnode: vnode,
+		data:  comp.newData(),
+		subs:  newSubs(comp.subs),
+		funcs: make(map[string]js.Func, 0),
 	}
 	vm.bus = newBus(bus, vm)
 	vm.render()

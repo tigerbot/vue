@@ -38,13 +38,11 @@ func newSubNode(tmpl string) *vnode {
 
 // createElement creates a virtual node element without children nor attributes.
 func createElement(node *html.Node) *vnode {
-	el := document.CreateElement(node.Data)
-	attrs := make(map[string]string, len(node.Attr))
 	return &vnode{
 		typ:   node.Type,
 		data:  node.Data,
-		attrs: attrs,
-		node:  el,
+		attrs: make(map[string]string, len(node.Attr)),
+		node:  document.CreateElement(node.Data),
 	}
 }
 
