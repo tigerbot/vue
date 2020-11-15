@@ -1,4 +1,6 @@
-module github.com/norunners/vue
+module github.com/tigerbot/vue
+
+go 1.15
 
 require (
 	github.com/cbroglie/mustache v1.0.1

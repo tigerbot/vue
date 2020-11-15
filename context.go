@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/norunners/vue/mapper"
+	"github.com/tigerbot/vue/mapper"
 )
 
 // Context is received by functions to interact with the component.

@@ -1,8 +1,9 @@
 package main
 
 import (
-	"github.com/norunners/vue"
 	"time"
+
+	"github.com/tigerbot/vue"
 )
 
 const tmpl = `

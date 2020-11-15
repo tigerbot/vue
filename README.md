@@ -1,11 +1,11 @@
 # vue
-[![GoDoc](https://godoc.org/github.com/norunners/vue?status.svg)](https://godoc.org/github.com/norunners/vue)
+[![GoDoc](https://godoc.org/github.com/tigerbot/vue?status.svg)](https://godoc.org/github.com/tigerbot/vue)
 
 Package `vue` is the progressive framework for [WebAssembly](https://github.com/golang/go/wiki/WebAssembly) applications.
 
 ## Install
 ```bash
-GOARCH=wasm GOOS=js go get github.com/norunners/vue
+GOARCH=wasm GOOS=js go get github.com/tigerbot/vue
 ```
 *Requires Go 1.12 or higher.*
 
@@ -21,7 +21,7 @@ The `main.go` file is compiled to a `.wasm` WebAssembly file.
 ```go
 package main
 
-import "github.com/norunners/vue"
+import "github.com/tigerbot/vue"
 
 type Data struct {
 	Message string

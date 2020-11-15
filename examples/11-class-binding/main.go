@@ -1,9 +1,10 @@
 package main
 
 import (
-	"github.com/norunners/vue"
 	"math/rand"
 	"time"
+
+	"github.com/tigerbot/vue"
 )
 
 const tmpl = `
